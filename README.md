@@ -15,7 +15,7 @@ the four-step tuning workflow:
 .
 ├── prof_utils.py      # shared profiling harness: run_profile(fn, name)
 ├── ex1_fusion.py      # Example 1: operator / kernel fusion with torch.compile
-├── ex2_layout.py      # Example 2: channels_last layout, convert-once allocation, cuDNN autotuning, FP16
+├── ex2_tiling.py      # Example 2: tile size impact and FP16 Tensor Core benefit (Triton matmul)
 ├── requirements.txt
 └── slides/
     └── GPU_Kernel_Tuning_NYU.pptx
@@ -36,9 +36,8 @@ pip install -r requirements.txt
 ## Run the examples
 
 ```bash
-python ex1_fusion.py                 # eager vs torch.compile
-python ex2_layout.py                 # NCHW FP32 -> NHWC FP32 -> NHWC FP16
-python ex2_layout.py --anti-pattern  # also profile converting the input inside the loop
+python ex1_fusion.py   # eager vs torch.compile
+python ex2_tiling.py   # bad tile vs good tile vs FP16 (Triton matmul)
 ```
 
 Each run prints a `key_averages()` table sorted by CUDA time, checks correctness with
@@ -54,10 +53,8 @@ Open any `./prof/<run-name>/*.pt.trace.json` file at https://ui.perfetto.dev (or
 |---|---|---|---|
 | 1 Fusion | CUDA kernels per step | one `aten` elementwise kernel per op (~9) | one `triton_poi_fused_*` kernel |
 | 1 Fusion | HBM traffic | read + write the full 128 MiB tensor per op | one read, one write |
-| 2 Layout | Layout transform / `aten::copy_` kernels | may appear in the NCHW run | none in channels_last runs |
-| 2 Allocation | Self CUDA Mem per step | grows with per-step conversion (`--anti-pattern`) | flat |
-| 2 Tiling | conv kernel names and CUDA time | default algorithm | cuDNN-autotuned algorithm / tile shape |
-| 2 Precision | conv kernels in `ex2_nhwc_fp16` | FP32 / TF32 kernels | Tensor-Core (MMA) kernels |
+| 2 Tiling | `matmul_kernel` CUDA time | ~50 ms (16×16×16 tiles) | ~5 ms (128×128×64 tiles) |
+| 2 Precision | `matmul_kernel` CUDA time | ~5 ms FP32 | ~2 ms FP16 (Tensor Cores) |
 
 Exact kernel names and timings depend on your GPU, driver, cuDNN and PyTorch versions.
 
